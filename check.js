@@ -138,7 +138,7 @@ function runSimpleChecks(text) {
         source: "heuristic",
         wrong: m,
         suggestion: m.slice(0, m.length/2),
-        message: `重複表現: "${m}" は冗長な可能性があります。`
+        message: `重複表現: "${m}" が重複しています`
       });
     });
   }
@@ -149,7 +149,7 @@ function runSimpleChecks(text) {
       source: "heuristic",
       wrong: null,
       suggestion: null,
-      message: "長文ですが句読点が見当たりません。読点・句点を適切に入れると読みやすくなります。"
+      message: "長文ですが句読点が見当たりません。"
     });
   }
 
