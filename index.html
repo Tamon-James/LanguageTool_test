@@ -1,16 +1,23 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <title>日本語文章</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <title>日本語誤字脱字チェッカー（LanguageTool + 自作ルール）</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <h1>誤字脱字チェッカー(LanguageTool API)</h1>
-    <textarea id="inputText" placeholder="ここに文章を入力してください"></textarea>
-    <div id="errors"></div>
+  <main>
+    <h1>日本語誤字脱字チェッカー</h1>
+    <p class="hint">リアルタイムチェック（入力が止まってから検出） — LanguageTool（文法）＋自作タイプミスルール</p>
 
-    <div id="results"></div>
-    <script src="check.js"></script>
+    <textarea id="inputText" placeholder="ここに文章を入力してください"></textarea>
+
+    <section id="results">
+      <h2>検出結果</h2>
+      <div id="errors"></div>
+    </section>
+  </main>
+
+  <script src="check.js"></script>
 </body>
 </html>
