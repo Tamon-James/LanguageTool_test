@@ -1,8 +1,13 @@
+const input = document.getElementById("inputText");
+const preview = document.getElementById("preview");
+const previewContainer = document.getElementById("previewContainer");
+const togglePreviewBtn = document.getElementById("togglePreview");
 
-const textarea = document.getElementById("inputText");
-const errorsDiv = document.getElementById("errors");
+const tooltip = document.getElementById("tooltip");
+let currentError = null;
 
-// ---------- 自作タイプミス辞書(chatGPT出力) ----------
+// 自作簡易辞書
+// 誤字の仮データ（学習用）
 const SIMPLE_MISTAKES = [
   { wrong: "こんにちわ", correct: "こんにちは", reason: "挨拶の送り仮名" },
   { wrong: "しゅた",     correct: "した", reason: "タイプ誤り" },
@@ -110,150 +115,118 @@ const SIMPLE_MISTAKES = [
   { wrong: "見られれる", correct: "見られられる", reason: "ら抜き言葉" },
   { wrong: "書き間違えれる", correct: "書き間違えられる", reason: "ら抜き言葉" },
   { wrong: "！れ", correct: "！！！", reason: "フリック入力ミス" },
-  { wrong: "？る", correct: "？", reason: "「フリック入力ミス" },
+  { wrong: "？る", correct: "？", reason: "フリック入力ミス" },
   { wrong: "。る", correct: "。", reason: "フリック入力ミス" }
 ];
 
-// ---------- 簡易ルール関数 ----------
-function runSimpleChecks(text) {
-  const findings = [];
-  const lower = text;
-
-  SIMPLE_MISTAKES.forEach(entry => {
-    if (lower.includes(entry.wrong)) {
-      findings.push({
-        source: "simple",
-        wrong: entry.wrong,
-        suggestion: entry.correct,
-        message: `${entry.wrong} → ${entry.correct} (${entry.reason})`
-      });
-    }
-  });
-
-  // 追加のヒューリスティック例：連続同語の検出
-  const duplicateWordMatch = text.match(/([^\s。、]{2,10})\1/g);
-  if (duplicateWordMatch) {
-    duplicateWordMatch.forEach(m => {
-      findings.push({
-        source: "heuristic",
-        wrong: m,
-        suggestion: m.slice(0, m.length/2),
-        message: `重複表現: "${m}" が重複しています`
-      });
-    });
-  }
-
-  // 句読点抜けチェック（句点や読点が一切ない長文）
-  if (text.length > 80 && !(/[。、]/.test(text))) {
-    findings.push({
-      source: "heuristic",
-      wrong: null,
-      suggestion: null,
-      message: "長文ですが句読点が見当たりません。"
-    });
-  }
-
-  return findings;
-}
-
-// ---------- LanguageTool API 呼び出し ----------
-async function callLanguageTool(text) {
-  const url = "https://api.languagetool.org/v2/check";
-  const params = new URLSearchParams();
-  params.append("text", text);
-  params.append("language", "ja");
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params
-  });
-  if (!res.ok) {
-    throw new Error(`LanguageTool API error: ${res.status}`);
-  }
-  return res.json();
-}
-
-// ---------- UI表示 ----------
-function render(findings, ltMatches) {
-  let html = "";
-
-  if (findings.length) {
-    findings.forEach(f => {
-      html += `<div class="errorItem"><div class="small">${escapeHtml(f.message)}</div>`;
-      if (f.suggestion) html += `<div class="small">候補: <span class="candidate">${escapeHtml(f.suggestion)}</span></div>`;
-      html += `</div>`;
-    });
-  }
-
-  // LanguageTool の結果表示
-  if (ltMatches && ltMatches.length) {
-    ltMatches.forEach(m => {
-      const msg = m.message || "文法チェック";
-      const replacements = (m.replacements || []).map(r => escapeHtml(r.value)).join(", ");
-      html += `<div class="errorItem"><div class="small">❗ ${escapeHtml(msg)}</div>`;
-      if (replacements) html += `<div class="small">候補: <span class="candidate">${replacements}</span></div>`;
-      html += `</div>`;
-    });
-  }
-
-  if (!findings.length && (!ltMatches || ltMatches.length === 0)) {
-    html = `<div class="infoItem"><div class="small">✅ 問題は見つかりませんでした（ただし検出できない誤りもあります）</div></div>`;
-  }
-
-  errorsDiv.innerHTML = html;
-}
-
-// HTMLエスケープ（簡易）
-function escapeHtml(s) {
-  return (s || "").toString()
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-// デバウンス関数
-function debounce(fn, delay = 700) {
-  let t = null;
-  return function(...args) {
-    if (t) clearTimeout(t);
-    t = setTimeout(() => fn.apply(this, args), delay);
-  };
-}
-
-// メインチェック処理 (デバウンス付き)
-const doCheck = debounce(async function(text) {
-  if (!text || !text.trim()) {
-    errorsDiv.innerHTML = "";
-    return;
-  }
-
-  // 1) 自作シンプルチェック（高速・ローカル）
-  const simpleFindings = runSimpleChecks(text);
-
-  // 2) LanguageTool を呼ぶ（ネットワーク）
-  let ltMatches = [];
+// LanguageTool APIでチェック
+async function checkWithLanguageTool(text) {
   try {
-    const ltRes = await callLanguageTool(text);
-    ltMatches = ltRes.matches || [];
-  } catch (err) {
-    ltMatches = [];
-    simpleFindings.unshift({
-      source: "system",
-      message: "⚠️ LanguageTool API に接続できませんでした。自作ルールのみで表示しています。"
+    const res = await fetch("https://api.languagetool.org/v2/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        text: text,
+        language: "ja"
+      })
     });
-    console.error(err);
+    const data = await res.json();
+    return data.matches.map(m => ({
+      wrong: text.substring(m.offset, m.offset + m.length),
+      correct: m.replacements.length > 0 ? m.replacements[0].value : "(提案なし)",
+      reason: m.message
+    }));
+  } catch (e) {
+    console.error("LanguageTool API error:", e);
+    return [];
   }
+}
 
-  // 結果を表示
-  render(simpleFindings, ltMatches);
-}, 700);
+// プレビュー更新（誤字＋繰り返し検出）
+function updatePreview(text, externalErrors = []) {
+  let html = text;
 
-// イベントリスナ
-textarea.addEventListener("input", (e) => {
-  const text = e.target.value;
-  doCheck(text);
+  // 1. 自作辞書＋API
+  [...dictionary, ...externalErrors].forEach(item => {
+    if (!item.wrong) return;
+    const regex = new RegExp(item.wrong, "g");
+    html = html.replace(
+      regex,
+      `<span class="error" data-correct="${item.correct}" data-reason="${item.reason}">${item.wrong}</span>`
+    );
+  });
+
+  // 2. 繰り返し検出（日本語文字2〜10文字の連続）
+  const duplicateRegex = /([^\s。、]{2,10})\1/g;
+  html = html.replace(duplicateRegex, (match) => {
+    return `<span class="error" data-correct="${match.slice(0, match.length/2)}" data-reason="繰り返しがあります">${match}</span>`;
+  });
+
+  preview.innerHTML = html;
+
+  // 3. 誤字クリックで吹き出し表示
+  document.querySelectorAll(".error").forEach(el => {
+    el.addEventListener("click", () => {
+      currentError = el;
+      document.getElementById("reason").textContent = "理由: " + el.dataset.reason;
+      document.getElementById("correct").textContent = el.dataset.correct;
+
+      const rect = el.getBoundingClientRect();
+      tooltip.style.top = (window.scrollY + rect.top - 5) + "px";
+      tooltip.style.left = (window.scrollX + rect.left - 270) + "px";
+      tooltip.style.display = "block";
+    });
+  });
+}
+
+// 入力ごとにプレビュー更新
+input.addEventListener("input", async () => {
+  const text = input.value;
+  updatePreview(text); // 自作辞書チェック
+
+  // APIチェック結果を反映
+  const apiErrors = await checkWithLanguageTool(text);
+  if (apiErrors.length > 0) {
+    updatePreview(text, apiErrors);
+  }
 });
 
-// 初期のヒント表示
-errorsDiv.innerHTML = `<div class="infoItem"><div class="small">テスト: 「こんにちわ」「よみました」「行くを」「毎日毎日」等で検出。入力が止まってから検出。</div></div>`;
+// プレビューボタンで表示切替（左右半画面）
+togglePreviewBtn.addEventListener("click", () => {
+  const isHidden = previewContainer.style.display === "none";
+  previewContainer.style.display = isHidden ? "block" : "none";
+  document.getElementById("container").classList.toggle("halfscreen", isHidden);
+  togglePreviewBtn.textContent = isHidden ? "プレビュー非表示" : "プレビュー表示";
+});
+
+// 吹き出しボタン処理（置き換え＆テキストエリアも更新）
+document.getElementById("replaceBtn").addEventListener("click", () => {
+  if (currentError) {
+    const correctText = currentError.dataset.correct;
+    const spanText = currentError.innerText;
+    // プレビュー内を置き換え
+    currentError.outerHTML = correctText;
+    // テキストエリア内も置き換え
+    input.value = input.value.replace(spanText, correctText);
+    tooltip.style.display = "none";
+    // 更新後に再度プレビュー更新
+    updatePreview(input.value);
+  }
+});
+
+// 吹き出しボタン処理（無視）
+document.getElementById("ignoreBtn").addEventListener("click", () => {
+  if (currentError) {
+    currentError.style.color = "inherit";
+    currentError.style.textDecoration = "none";
+    currentError.classList.remove("error");
+    tooltip.style.display = "none";
+  }
+});
+
+// 吹き出し外クリックで閉じる
+document.addEventListener("click", (e) => {
+  if (!tooltip.contains(e.target) && !e.target.classList.contains("error")) {
+    tooltip.style.display = "none";
+  }
+});
