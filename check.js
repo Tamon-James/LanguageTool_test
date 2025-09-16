@@ -162,6 +162,8 @@ function updatePreview(text, externalErrors = []) {
     return `<span class="error" data-correct="${match.slice(0, match.length/2)}" data-reason="繰り返しがあります">${match}</span>`;
   });
 
+  html = html.replace(/\n/g, "<br>");
+
   preview.innerHTML = html;
 
   // 3. 誤字クリックで吹き出し表示
